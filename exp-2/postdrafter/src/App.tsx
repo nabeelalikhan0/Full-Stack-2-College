@@ -1,22 +1,21 @@
-"use client";
-
 import { useState, useEffect, useRef } from "react";
-
-// Types
-interface Platform {
-  id: string;
-  name: string;
-  color: string;
-  charLimit: number;
-}
-
-interface PostDraft {
-  id: string;
-  title: string;
-  platformId: string;
-  content: string;
-  createdAt: string;
-}
+import { useDispatch, useSelector } from "react-redux";
+import { RootState } from "./store/store";
+import {
+  setInitialState,
+  setPostTitle,
+  setPostDraft,
+  setSelectedPlatformId,
+  addPlatform,
+  deletePlatform,
+  saveDraft,
+  deleteDraft,
+  clearAllDrafts,
+  loadDraft,
+  clearComposer,
+  Platform,
+  PostDraft
+} from "./store/composerSlice";
 
 // Preset standard platforms color mapping and limits
 const STANDARD_PLATFORMS: Record<string, { color: string; charLimit: number }> = {
@@ -30,14 +29,6 @@ const STANDARD_PLATFORMS: Record<string, { color: string; charLimit: number }> =
   pinterest: { color: "#BD081C", charLimit: 500 },
   threads: { color: "#000000", charLimit: 500 },
 };
-
-// Initial default platforms
-const DEFAULT_PLATFORMS: Platform[] = [
-  { id: "x-twitter", name: "X / Twitter", color: "#1DA1F2", charLimit: 280 },
-  { id: "linkedin", name: "LinkedIn", color: "#0A66C2", charLimit: 3000 },
-  { id: "instagram", name: "Instagram", color: "#E1306C", charLimit: 2200 },
-  { id: "facebook", name: "Facebook", color: "#1877F2", charLimit: 5000 },
-];
 
 // Helper to generate a random HSL color for custom platforms
 const getRandomHSLColor = (name: string) => {
@@ -71,27 +62,29 @@ const POPULAR_EMOJIS = ["👍", "🔥", "🚀", "❤️", "😂", "🎉", "💡"
 // Popular hashtags to insert
 const POPULAR_HASHTAGS = ["#buildinpublic", "#productivity", "#marketing", "#indiehackers", "#coding", "#creators"];
 
-export default function Home() {
+export default function App() {
+  const dispatch = useDispatch();
+
   // Mounting flag to prevent SSR hydration mismatch
   const [mounted, setMounted] = useState(false);
 
-  // States
-  const [platforms, setPlatforms] = useState<Platform[]>(DEFAULT_PLATFORMS);
-  const [selectedPlatformId, setSelectedPlatformId] = useState<string>("x-twitter");
+  // Redux States
+  const platforms = useSelector((state: RootState) => state.composer.platforms);
+  const selectedPlatformId = useSelector((state: RootState) => state.composer.selectedPlatformId);
+  const postTitle = useSelector((state: RootState) => state.composer.postTitle);
+  const postDraft = useSelector((state: RootState) => state.composer.postDraft);
+  const drafts = useSelector((state: RootState) => state.composer.drafts);
+
+  // Component Local UI States
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [newPlatformName, setNewPlatformName] = useState<string>("");
   const [newPlatformLimit, setNewPlatformLimit] = useState<number>(2000);
-
-  const [postTitle, setPostTitle] = useState<string>("");
-  const [postDraft, setPostDraft] = useState<string>("");
-
-  const [drafts, setDrafts] = useState<PostDraft[]>([]);
-  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
 
   // Simulator actions state
   const [publishingState, setPublishingState] = useState<"idle" | "connecting" | "uploading" | "success">("idle");
   const [schedulingState, setSchedulingState] = useState<"idle" | "selecting" | "success">("idle");
   const [scheduleDateTime, setScheduleDateTime] = useState<string>("");
-
+  
   // Custom alerts/toasts
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "info" | "error" } | null>(null);
 
@@ -103,9 +96,10 @@ export default function Home() {
       setMounted(true);
       // Load custom platforms from localStorage if saved
       const savedPlatforms = localStorage.getItem("auradraft_platforms");
+      let platformsData: Platform[] = [];
       if (savedPlatforms) {
         try {
-          setPlatforms(JSON.parse(savedPlatforms));
+          platformsData = JSON.parse(savedPlatforms);
         } catch (e) {
           console.error("Error loading platforms", e);
         }
@@ -113,23 +107,20 @@ export default function Home() {
 
       // Load drafts from localStorage
       const savedDrafts = localStorage.getItem("auradraft_drafts");
+      let draftsData: PostDraft[] = [];
       if (savedDrafts) {
         try {
-          setDrafts(JSON.parse(savedDrafts));
+          draftsData = JSON.parse(savedDrafts);
         } catch (e) {
           console.error("Error loading drafts", e);
         }
       }
+
+      dispatch(setInitialState({ platforms: platformsData, drafts: draftsData }));
     }, 0);
 
     return () => clearTimeout(timer);
-  }, []);
-
-  // Save platforms to localStorage when updated
-  const savePlatforms = (updatedPlatforms: Platform[]) => {
-    setPlatforms(updatedPlatforms);
-    localStorage.setItem("auradraft_platforms", JSON.stringify(updatedPlatforms));
-  };
+  }, [dispatch]);
 
   // Toast helper
   const showToast = (text: string, type: "success" | "info" | "error" = "success") => {
@@ -168,9 +159,7 @@ export default function Home() {
       charLimit: limit,
     };
 
-    const updated = [...platforms, newPlatform];
-    savePlatforms(updated);
-    setSelectedPlatformId(newPlatform.id);
+    dispatch(addPlatform(newPlatform));
     setNewPlatformName("");
     showToast(`Added platform "${nameTrimmed}"`, "success");
   };
@@ -181,14 +170,8 @@ export default function Home() {
       showToast("You must keep at least one platform!", "error");
       return;
     }
-
-    const updated = platforms.filter((p) => p.id !== id);
-    savePlatforms(updated);
-
-    // If deleted platform was active, switch active platform
-    if (selectedPlatformId === id) {
-      setSelectedPlatformId(updated[0].id);
-    }
+    
+    dispatch(deletePlatform(id));
     showToast(`Removed platform "${name}"`, "info");
   };
 
@@ -199,52 +182,18 @@ export default function Home() {
       return;
     }
 
-    const activeDrafts = [...drafts];
+    const isNew = !selectedDraftId;
+    const idToSave = selectedDraftId || `draft-${Date.now()}`;
+    const createdAt = new Date().toLocaleString();
 
-    if (selectedDraftId) {
-      // Update existing draft
-      const draftIndex = activeDrafts.findIndex((d) => d.id === selectedDraftId);
-      if (draftIndex !== -1) {
-        activeDrafts[draftIndex] = {
-          ...activeDrafts[draftIndex],
-          title: postTitle.trim(),
-          platformId: selectedPlatformId,
-          content: postDraft,
-          createdAt: new Date().toLocaleString(),
-        };
-        showToast("Draft updated successfully!");
-      }
-    } else {
-      // Create new draft
-      const newDraft: PostDraft = {
-        id: `draft-${Date.now()}`,
-        title: postTitle.trim(),
-        platformId: selectedPlatformId,
-        content: postDraft,
-        createdAt: new Date().toLocaleString(),
-      };
-      activeDrafts.unshift(newDraft);
-      setSelectedDraftId(newDraft.id);
-      showToast("Draft saved successfully!");
-    }
-
-    setDrafts(activeDrafts);
-    localStorage.setItem("auradraft_drafts", JSON.stringify(activeDrafts));
+    dispatch(saveDraft({ id: idToSave, createdAt, isNew }));
+    setSelectedDraftId(idToSave);
+    showToast(isNew ? "Draft saved successfully!" : "Draft updated successfully!");
   };
 
   // Load draft handler
   const handleLoadDraft = (draft: PostDraft) => {
-    setPostTitle(draft.title);
-    setPostDraft(draft.content);
-
-    // Check if draft's platform exists, otherwise default
-    if (platforms.some((p) => p.id === draft.platformId)) {
-      setSelectedPlatformId(draft.platformId);
-    } else {
-      // Platform doesn't exist, use default or current
-      showToast("Original platform deleted, loading in current platform view.", "info");
-    }
-
+    dispatch(loadDraft(draft));
     setSelectedDraftId(draft.id);
     showToast("Draft loaded!");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -253,9 +202,7 @@ export default function Home() {
   // Delete draft handler
   const handleDeleteDraft = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = drafts.filter((d) => d.id !== id);
-    setDrafts(updated);
-    localStorage.setItem("auradraft_drafts", JSON.stringify(updated));
+    dispatch(deleteDraft(id));
     if (selectedDraftId === id) {
       setSelectedDraftId(null);
     }
@@ -264,8 +211,7 @@ export default function Home() {
 
   // Clear composer
   const handleNewComposer = () => {
-    setPostTitle("");
-    setPostDraft("");
+    dispatch(clearComposer());
     setSelectedDraftId(null);
     showToast("Composer cleared!", "info");
   };
@@ -276,9 +222,9 @@ export default function Home() {
       showToast("Please fill in both title and draft content before publishing!", "error");
       return;
     }
-
+    
     setPublishingState("connecting");
-
+    
     setTimeout(() => {
       setPublishingState("uploading");
       setTimeout(() => {
@@ -314,8 +260,8 @@ export default function Home() {
     const start = textareaRef.current.selectionStart;
     const end = textareaRef.current.selectionEnd;
     const newText = text.substring(0, start) + emoji + text.substring(end);
-    setPostDraft(newText);
-
+    dispatch(setPostDraft(newText));
+    
     // Focus back and set selection
     setTimeout(() => {
       if (textareaRef.current) {
@@ -329,15 +275,15 @@ export default function Home() {
     const text = postDraft.trim();
     if (text.endsWith(hashtag)) return;
     const separator = text.length === 0 ? "" : text.endsWith(" ") ? "" : " ";
-    setPostDraft(text + separator + hashtag + " ");
-
+    dispatch(setPostDraft(text + separator + hashtag + " "));
+    
     setTimeout(() => {
       textareaRef.current?.focus();
     }, 50);
   };
 
   const loadTemplate = (templateContent: string) => {
-    setPostDraft(templateContent);
+    dispatch(setPostDraft(templateContent));
     showToast("Template loaded into composer.");
   };
 
@@ -369,7 +315,7 @@ export default function Home() {
       <div className="flex-1 flex items-center justify-center bg-[#f8f9fa]">
         <div className="text-zinc-500 flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-t-[#1a73e8] border-zinc-200 animate-spin"></div>
-          <span className="text-xs font-semibold text-zinc-600">Loading Google Post Composer...</span>
+          <span className="text-xs font-semibold text-zinc-600">Loading Post Composer...</span>
         </div>
       </div>
     );
@@ -377,12 +323,12 @@ export default function Home() {
 
   return (
     <div className="flex-1 w-full flex flex-col bg-[#f8f9fa] min-h-screen text-[#202124]">
-
+      
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 left-6 z-50 flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg transition-all duration-300 bg-[#323232] border-[#323232] text-white">
           <span className="text-xs font-medium">{toastMessage.text}</span>
-          <button
+          <button 
             onClick={() => setToastMessage(null)}
             className="ml-3 text-xs text-[#8ab4f8] font-bold uppercase hover:underline"
           >
@@ -391,6 +337,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* Google-Style Top Navbar Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-[#dadce0] px-6 py-3 flex flex-row items-center justify-between">
         <div>
           <h1 className="text-base font-semibold text-[#202124] tracking-tight">
@@ -401,9 +348,9 @@ export default function Home() {
         {/* Clear Composer & Status */}
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-[#5f6368] bg-[#f1f3f4] px-2.5 py-1 rounded-md">
-            Cloud Saved (Simulated)
+            Redux Active
           </span>
-
+          
           <button
             onClick={handleNewComposer}
             className="px-3.5 py-1.5 text-xs font-semibold rounded-md border border-[#dadce0] bg-white hover:bg-[#f8f9fa] text-[#1a73e8] transition"
@@ -415,10 +362,10 @@ export default function Home() {
 
       {/* Main Container Layout */}
       <main className="w-full max-w-7xl mx-auto px-4 md:px-8 py-8 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-
+        
         {/* Left Hand: Workspace Suite (8 columns) */}
         <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-6">
-
+          
           {/* Container 1: Platforms Manager (Google Filter Chip style) */}
           <section className="bg-white border border-[#dadce0] rounded-lg p-5 shadow-sm">
             <div className="border-b border-[#f1f3f4] pb-3 mb-4">
@@ -468,14 +415,14 @@ export default function Home() {
                 return (
                   <div
                     key={platform.id}
-                    onClick={() => setSelectedPlatformId(platform.id)}
+                    onClick={() => dispatch(setSelectedPlatformId(platform.id))}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer select-none transition-all duration-150 ${isActive
                         ? "bg-[#e8f0fe] border-[#1a73e8] text-[#1967d2] font-semibold"
                         : "bg-[#f1f3f4] hover:bg-[#e8eaed] border-transparent text-[#3c4043]"
                       }`}
                   >
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                    <span 
+                      className="w-2.5 h-2.5 rounded-full shrink-0" 
                       style={{ backgroundColor: platform.color }}
                     />
                     <span>{platform.name}</span>
@@ -505,7 +452,7 @@ export default function Home() {
           {/* Container 2: Title and Platform Selector (Form details) */}
           <section className="bg-white border border-[#dadce0] rounded-lg p-5 shadow-sm">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-
+              
               {/* Post Title Field */}
               <div className="md:col-span-8 flex flex-col gap-1">
                 <label className="text-xs font-semibold text-[#5f6368]">Post Title</label>
@@ -513,7 +460,7 @@ export default function Home() {
                   type="text"
                   placeholder="Enter sheet title to organize your draft..."
                   value={postTitle}
-                  onChange={(e) => setPostTitle(e.target.value)}
+                  onChange={(e) => dispatch(setPostTitle(e.target.value))}
                   className="w-full text-xs bg-white border border-[#dadce0] focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] outline-none rounded-md px-3.5 py-2.5 text-[#202124] transition placeholder-zinc-400"
                 />
               </div>
@@ -524,7 +471,7 @@ export default function Home() {
                 <div className="relative">
                   <select
                     value={selectedPlatformId}
-                    onChange={(e) => setSelectedPlatformId(e.target.value)}
+                    onChange={(e) => dispatch(setSelectedPlatformId(e.target.value))}
                     className="w-full text-xs bg-white border border-[#dadce0] focus:border-[#1a73e8] focus:outline-none focus:ring-1 focus:ring-[#1a73e8] rounded-md px-3 py-2.5 text-[#202124] appearance-none cursor-pointer transition"
                   >
                     {platforms.map((p) => (
@@ -548,7 +495,7 @@ export default function Home() {
           <section className="bg-white border border-[#dadce0] rounded-lg p-5 shadow-sm flex flex-col gap-3">
             <div className="flex items-center justify-between border-b border-[#f1f3f4] pb-2">
               <span className="text-sm font-semibold text-[#202124]">Composer Editor</span>
-
+              
               {/* Templates Dropdown */}
               <div className="relative group">
                 <button
@@ -560,7 +507,7 @@ export default function Home() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
-
+                
                 <div className="absolute right-0 mt-1 w-52 rounded-md bg-white border border-[#dadce0] shadow-md p-1 hidden group-hover:block hover:block z-20">
                   {POST_TEMPLATES.map((tmpl, idx) => (
                     <button
@@ -577,7 +524,7 @@ export default function Home() {
 
             {/* Google Keep style toolbar for quick helpers */}
             <div className="flex flex-wrap items-center gap-2 bg-[#f8f9fa] p-2 rounded border border-[#e8eaed]">
-
+              
               {/* Emojis list */}
               <div className="flex items-center gap-1.5 border-r border-[#dadce0] pr-2.5 py-0.5">
                 {POPULAR_EMOJIS.map((emoji) => (
@@ -616,7 +563,7 @@ export default function Home() {
                 rows={8}
                 placeholder={`Draft your content here. Post details will align with rules for ${activePlatform?.name || "the target channel"}...`}
                 value={postDraft}
-                onChange={(e) => setPostDraft(e.target.value)}
+                onChange={(e) => dispatch(setPostDraft(e.target.value))}
                 className={`w-full text-sm bg-white border outline-none rounded-md px-4 py-4 text-[#202124] placeholder-zinc-400 transition resize-y ${isOverLimit
                     ? "border-[#ea4335] focus:ring-1 focus:ring-[#ea4335]"
                     : "border-[#dadce0] focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8]"
@@ -625,7 +572,7 @@ export default function Home() {
 
               {/* Float visual counter inside textarea */}
               <div className="absolute bottom-4 right-4 flex items-center gap-2.5 bg-white border border-[#dadce0] px-2.5 py-1 rounded-md shadow-sm select-none">
-
+                
                 {/* SVG circular progress indicator */}
                 <svg className="w-4.5 h-4.5 -rotate-90">
                   <circle
@@ -642,10 +589,10 @@ export default function Home() {
                     r={radius}
                     fill="none"
                     stroke={
-                      isOverLimit
-                        ? "#ea4335"
-                        : percentUsed > 80
-                          ? "#fbbc05"
+                      isOverLimit 
+                        ? "#ea4335" 
+                        : percentUsed > 80 
+                          ? "#fbbc05" 
                           : "#1a73e8"
                     }
                     strokeWidth="2"
@@ -681,7 +628,7 @@ export default function Home() {
 
         {/* Right Hand: Channel Live Previews & Actions (4 columns) */}
         <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-6">
-
+          
           {/* Container 4: Live Channel Preview (Light feed layouts) */}
           <section className="bg-white border border-[#dadce0] rounded-lg p-5 shadow-sm flex flex-col gap-4">
             <div>
@@ -695,7 +642,7 @@ export default function Home() {
 
             {/* Light Preview card */}
             <div className="rounded-lg border border-[#dadce0] bg-[#f8f9fa] p-0.5 shadow-sm relative overflow-hidden">
-
+              
               {/* Header Badge */}
               <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[#dadce0] bg-white">
                 <span
@@ -709,7 +656,7 @@ export default function Home() {
 
               {/* Feed Card Rendering */}
               <div className="p-4 min-h-[220px] bg-white">
-
+                
                 {/* 1. X/Twitter Light Preview */}
                 {(activePlatform?.name.toLowerCase().includes("x") || activePlatform?.name.toLowerCase().includes("twitter")) && (
                   <div className="flex flex-col gap-2.5 font-sans text-sm text-[#0f1419]">
@@ -731,7 +678,7 @@ export default function Home() {
                         <span className="text-[#536471] text-xs">@yourhandle · Just now</span>
                       </div>
                     </div>
-
+                    
                     <div className="text-[#0f1419] text-sm whitespace-pre-line break-words leading-relaxed pl-11">
                       {postTitle && <span className="font-extrabold block text-black mb-1">{postTitle}</span>}
                       {postDraft || <span className="text-zinc-400 italic">Content draft will display here...</span>}
@@ -773,7 +720,7 @@ export default function Home() {
                         <span className="text-[#5f6368] text-[9px] mt-0.5">Just now · 🌐</span>
                       </div>
                     </div>
-
+                    
                     <div className="text-[#202124] text-[13px] whitespace-pre-line break-words leading-relaxed">
                       {postTitle && <span className="font-bold block text-black mb-1">{postTitle}</span>}
                       {postDraft || <span className="text-zinc-400 italic">LinkedIn text will appear here...</span>}
@@ -816,7 +763,7 @@ export default function Home() {
                       </div>
                       <span className="text-[#262626] font-bold text-xs cursor-pointer">•••</span>
                     </div>
-
+                    
                     {/* Visual box representing Instagram image post */}
                     <div
                       className="w-full h-28 rounded-md flex flex-col justify-end p-3 text-white font-bold relative overflow-hidden shadow-inner group cursor-pointer"
@@ -890,7 +837,7 @@ export default function Home() {
 
           {/* Action Suite (Google style Flat white card) */}
           <section className="bg-white border border-[#dadce0] rounded-lg p-5 shadow-sm flex flex-col gap-3 relative overflow-hidden">
-
+            
             <div>
               <h2 className="text-sm font-semibold text-[#202124]">
                 Actions & Deployment
@@ -1032,14 +979,13 @@ export default function Home() {
                 Retrieve or update saved composer drafts in local memory.
               </p>
             </div>
-
+            
             {drafts.length > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   if (confirm("Delete all saved draft sheets?")) {
-                    setDrafts([]);
-                    localStorage.removeItem("auradraft_drafts");
+                    dispatch(clearAllDrafts());
                     setSelectedDraftId(null);
                     showToast("Cleared all draft sheets.", "info");
                   }
@@ -1080,7 +1026,7 @@ export default function Home() {
                           {draft.title}
                         </h3>
 
-                        <div
+                        <div 
                           className="px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1 shadow-sm"
                           style={{ backgroundColor: draftPlatform?.color || "#5f6368" }}
                         >
@@ -1097,7 +1043,7 @@ export default function Home() {
                     {/* Bottom Row */}
                     <div className="flex items-center justify-between border-t border-[#f1f3f4] pt-2 mt-auto">
                       <span className="text-[9px] text-[#9aa0a6] font-mono">{draft.createdAt}</span>
-
+                      
                       <button
                         type="button"
                         onClick={(e) => handleDeleteDraft(draft.id, e)}
