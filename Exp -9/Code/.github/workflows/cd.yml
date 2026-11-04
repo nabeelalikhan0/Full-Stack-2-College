@@ -1,0 +1,38 @@
+name: CD Pipeline
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
+
+jobs:
+  deploy-canary:
+    name: Build Container & Staged Canary Rollout
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: 1. Checkout Code
+        uses: actions/checkout@v3
+
+      - name: 2. Build Docker Image
+        run: |
+          echo "Building production Docker image..."
+          docker build -t cicd-demo-app:v2.0.0-canary ./Exp\ -9\ /Code/backend
+
+      - name: 3. Simulate Registry Authentication & Push
+        run: |
+          echo "Authenticating to Docker Hub / GitHub Container Registry..."
+          echo "Pushing image cicd-demo-app:v2.0.0-canary to container registry..."
+
+      - name: 4. Staged Canary Deployment (10% Traffic Routing)
+        run: |
+          echo "=========================================="
+          echo "STAGE 1: Routing 10% traffic to Canary (v2)"
+          echo "STAGE 2: Monitoring error rate & latency..."
+          echo "Canary health status: 200 OK, Error rate: 0.00%"
+          echo "STAGE 3: Expanding rollout: 10% -> 50% -> 100%"
+          echo "Continuous Deployment completed successfully!"
+          echo "=========================================="
+

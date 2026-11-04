@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # ========================================================
+  # Primary Backend Application (Experiment 9 Demo Service)
+  # ========================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cicd-backend-app
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SERVER_PORT=8080
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ========================================================
+  # Simulated Canary Deployment Service (v2.0.0-canary)
+  # Demonstrates staged rollout on a separate container port
+  # ========================================================
+  backend-canary:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cicd-backend-canary
+    ports:
+      - "8082:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=canary
+      - SERVER_PORT=8080
+    restart: unless-stopped
+
