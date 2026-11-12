@@ -1,6 +1,7 @@
 spring:
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/smartcrop}
+    # Either set DB_URL (full JDBC URL) or DB_HOST / DB_PORT / DB_NAME.
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:smartcrop}}
     driver-class-name: org.postgresql.Driver
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:postgres}

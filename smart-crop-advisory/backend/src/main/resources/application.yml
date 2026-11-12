@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 spring:
   application:
@@ -22,6 +22,7 @@ app:
     secret: ${JWT_SECRET:dev-only-secret-change-me-please-0123456789abcdef}
     expiration-ms: 86400000
   cors:
+    # Override in production with APP_CORS_ALLOWED_ORIGINS=https://your-frontend.vercel.app (comma-separated)
     allowed-origins:
       - http://localhost:5173
       - http://localhost:3000
