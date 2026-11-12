@@ -45,7 +45,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/crops/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/crops/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/crops/**").hasRole("ADMIN")
-                .anyRequest().authenticated())
+                .requestMatchers("/api/**").authenticated()
+                // everything else is the bundled React app (static files and index.html)
+                .anyRequest().permitAll())
             .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

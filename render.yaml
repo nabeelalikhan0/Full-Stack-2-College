@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: smart-crop-advisory
+    runtime: docker
+    dockerfilePath: ./smart-crop-advisory/Dockerfile
+    dockerContext: ./smart-crop-advisory
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: postgres
+      - key: DB_HOST
+        fromDatabase:
+          name: smart-crop-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: smart-crop-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: smart-crop-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: smart-crop-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: smart-crop-db
+          property: password
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+
+databases:
+  - name: smart-crop-db
+    plan: free

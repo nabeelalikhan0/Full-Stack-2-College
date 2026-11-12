@@ -1,31 +1,30 @@
-# Deploying Smart Crop Advisory
+# Deploying Smart Crop Advisory on Render
 
-The frontend is a static site (Vercel) and the backend is a Java service (Render, via Docker) with a PostgreSQL database. Vercel cannot run the Spring Boot backend, so the two are hosted separately.
+The whole app (React frontend + Spring Boot API) is built into **one Docker service**, plus a free PostgreSQL database. You get one URL, with no CORS or API-URL settings to wire up.
 
-## 1. Backend + database on Render
+## Deploy (about 5 minutes)
 
-1. Sign in at <https://render.com> with GitHub.
-2. **New > Blueprint**, pick the `Full-Stack-2-College` repo. Render reads `smart-crop-advisory/render.yaml` if you set the blueprint path to it (or move the file to the repo root).
-3. When prompted, enter:
-   - `ADMIN_PASSWORD`: a strong password for the seeded admin (`admin@smartcrop.local`).
-   - `APP_CORS_ALLOWED_ORIGINS`: leave blank for now; fill it in at step 3.
-4. Deploy. When it is live, note the URL, e.g. `https://smart-crop-api.onrender.com`. Check `https://<that-url>/api/reference` returns 401 (the API is up and protected).
+1. Go to <https://render.com> and sign in with GitHub.
+2. Click **New > Blueprint** and select the `Full-Stack-2-College` repository. Render finds `render.yaml` at the repo root.
+3. When asked for `ADMIN_PASSWORD`, type a strong password. `JWT_SECRET` and the database settings are filled in automatically.
+4. Click **Apply**. The first build takes several minutes (it builds the frontend, then the backend).
+5. Open the service URL, e.g. `https://smart-crop-advisory.onrender.com`.
 
-Manual alternative: create a PostgreSQL database and a Docker web service with root directory `smart-crop-advisory/backend`, then set `SPRING_PROFILES_ACTIVE=postgres`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `JWT_SECRET` (32+ chars), `ADMIN_PASSWORD`.
+Log in as `admin@smartcrop.local` with the password you set, or register a farmer account.
 
-## 2. Frontend on Vercel
+## Checks
 
-1. Sign in at <https://vercel.com> with GitHub, **Add New > Project**, import `Full-Stack-2-College`.
-2. Set **Root Directory** to `smart-crop-advisory/frontend`. Framework preset: Vite.
-3. Add environment variable `VITE_API_URL` = `https://<your-backend-url>/api`.
-4. Deploy. You get a URL like `https://your-app.vercel.app`.
+- `https://<your-url>/` shows the login page.
+- `https://<your-url>/api/crops` returns 401 (the API is up and protected).
+- Log in, run a recommendation, open a farm plan.
 
-## 3. Allow the frontend to call the backend (CORS)
+## If the build fails
 
-In Render, set `APP_CORS_ALLOWED_ORIGINS` = `https://your-app.vercel.app` (comma-separate several origins) and redeploy the backend.
+Open the service's **Logs** tab and copy the error. The backend was written without being compiled in the authoring environment, so the first Maven build is the first real compile; send the log and it can be fixed quickly.
 
 ## Notes
 
-- Free tiers sleep when idle, so the first request can take about a minute, and free databases may have time limits. Check each provider's current terms.
-- Without the `postgres` profile the backend uses file-based H2, which is wiped on most cloud hosts at each deploy. Use PostgreSQL for anything you want to keep.
-- Change the default admin password and never reuse the development `JWT_SECRET`.
+- Free web services sleep when idle, so the first request after a pause can take about a minute. Free databases have time and size limits; check Render's current terms.
+- Without the `postgres` profile the app uses a file-based H2 database that is wiped on each deploy, which is why the blueprint sets `SPRING_PROFILES_ACTIVE=postgres`.
+- Never reuse the development `JWT_SECRET`; the blueprint generates a fresh one.
+- Running the two parts separately (backend on Render, frontend on Vercel) still works: use `backend/Dockerfile`, set `VITE_API_URL` on Vercel and `APP_CORS_ALLOWED_ORIGINS` on the backend.
