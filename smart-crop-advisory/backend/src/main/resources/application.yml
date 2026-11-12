@@ -1,0 +1,39 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: smart-crop-advisory
+  datasource:
+    # File-based H2 database: zero setup, data survives restarts (stored in ./data).
+    # Use the "postgres" profile for PostgreSQL (see application-postgres.yml).
+    url: jdbc:h2:file:./data/smartcrop;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+app:
+  jwt:
+    # Override in production: export JWT_SECRET=<random string of at least 32 characters>
+    secret: ${JWT_SECRET:dev-only-secret-change-me-please-0123456789abcdef}
+    expiration-ms: 86400000
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost:3000
+  admin:
+    # Seeded on first start. Change these for any real deployment.
+    name: System Admin
+    email: ${ADMIN_EMAIL:admin@smartcrop.local}
+    password: ${ADMIN_PASSWORD:Admin@123}
+  pricing:
+    # Indicative input prices in INR - used by the resource planner.
+    urea-per-kg: 6.5
+    dap-per-kg: 27.0
+    mop-per-kg: 34.0
+    labour-per-day: 450.0
+    water-per-m3: 1.2
